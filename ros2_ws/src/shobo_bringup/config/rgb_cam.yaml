@@ -1,0 +1,10 @@
+shobo_sensors:
+  ros__parameters:
+    rgb:
+      device: "$(env RGB_DEV /dev/video1)"
+      width: 1280
+      height: 720
+      fps: 30
+      frame_id: "rgb_frame"
+      camera_name: "rgb_uvc"
+      camera_info_url: ""   # file://.../rgb.yaml (optional calibration)

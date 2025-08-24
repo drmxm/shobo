@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1
+# JetPack 6.0 / L4T r36.2.0 with ML stack
+FROM nvcr.io/nvidia/l4t-ml:r36.2.0-py3
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    OPENCV_LOG_LEVEL=ERROR \
+    YOLO_CONFIG_DIR=/work/.ultralytics \
+    PIP_ROOT_USER_ACTION=ignore
+
+# Base tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-pip git wget unzip \
+ && rm -rf /var/lib/apt/lists/*
+
+# Keep NumPy 1.x (Jetson wheels expect it)
+RUN printf "numpy<2\n" > /constraints.txt
+ENV PIP_CONSTRAINT=/constraints.txt
+
+# Ultralytics + ONNX + onnxslim (preinstalled to avoid runtime autoupdate)
+ARG ULTRALYTICS_VERSION="8.*"
+RUN python3 -m pip install --upgrade pip \
+ && python3 -m pip install "ultralytics==${ULTRALYTICS_VERSION}" onnx "onnxslim>=0.1.65"
+
+# Workdir and persistent config dir
+WORKDIR /work
+RUN mkdir -p /work/.ultralytics && chmod -R 777 /work/.ultralytics
+
+CMD ["/bin/bash"]

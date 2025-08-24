@@ -1,0 +1,10 @@
+{
+  "engine": "ros2_ws/yolov8n.engine",
+  "created_utc": "2025-08-24T14:04:15.039335Z",
+  "imgsz": 640,
+  "half": true,
+  "device": 0,
+  "opset": 17,
+  "workspace_gb": 4,
+  "source_model": "yolov8n.pt"
+}

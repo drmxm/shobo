@@ -1,0 +1,10 @@
+shobo_sensors:
+  ros__parameters:
+    ir:
+      sensor_id: "$(env IR_SENSOR_ID 0)"
+      width: 1280
+      height: 720
+      fps: 30
+      frame_id: "ir_frame"
+      camera_name: "ir_imx219"
+      camera_info_url: ""   # file://.../ir.yaml (optional calibration)
