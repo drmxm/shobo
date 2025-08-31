@@ -2,7 +2,7 @@
 <package format="3">
   <name>shobo_bringup</name>
   <version>0.1.0</version>
-  <description>Launch + configuration for ShoBo sensors & detectors</description>
+  <description>Launch and configuration for ShoBo sensors and detectors</description>
   <maintainer email="you@example.com">Cosmin</maintainer>
   <license>Apache-2.0</license>
   <buildtool_depend>ament_python</buildtool_depend>

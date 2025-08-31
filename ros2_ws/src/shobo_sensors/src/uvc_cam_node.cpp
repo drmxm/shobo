@@ -20,7 +20,6 @@ public:
     it_ = std::make_shared<image_transport::ImageTransport>(shared_from_this());
     pub_img_ = it_->advertise("image_raw", 1);
     pub_info_ = this->create_publisher<sensor_msgs::msg::CameraInfo>("camera_info", rclcpp::SensorDataQoS());
-
     cinfo_ = std::make_shared<camera_info_manager::CameraInfoManager>(this, cname, ciurl);
 
     cap_.open(device, cv::CAP_V4L2);

@@ -1,8 +1,12 @@
 #include <rclcpp/rclcpp.hpp>
 #include <image_transport/image_transport.hpp>
 #include <sensor_msgs/msg/image.hpp>
+
+#include <vision_msgs/msg/detection2_d.hpp>
 #include <vision_msgs/msg/detection2_d_array.hpp>
 #include <vision_msgs/msg/object_hypothesis_with_pose.hpp>
+#include <geometry_msgs/msg/pose2_d.hpp>
+
 #include <cv_bridge/cv_bridge.h>
 
 #include <NvInfer.h>
@@ -10,42 +14,24 @@
 #include <opencv2/opencv.hpp>
 #include <fstream>
 #include <vector>
-#include <tuple>
 #include <memory>
-#include <mutex>
-#include <cmath>
+#include <algorithm>
+#include <string>
+
+#include "shobo_detectors/kernels.hpp"
 
 using vision_msgs::msg::Detection2DArray;
 using vision_msgs::msg::Detection2D;
 using vision_msgs::msg::ObjectHypothesisWithPose;
+using geometry_msgs::msg::Pose2D;
 
 #define CHECK_CUDA(x) do{ cudaError_t e=(x); if(e!=cudaSuccess){throw std::runtime_error(cudaGetErrorString(e));} }while(0)
 
-// Minimal TRT logger
 class Logger : public nvinfer1::ILogger {
   void log(Severity s, const char* m) noexcept override {
     if (s <= Severity::kWARNING) fprintf(stderr, "[TRT] %s\n", m);
   }
 } gLogger;
-
-// CUDA preproc: BGR8 -> NCHW [0,1], letterbox to (outW,outH)
-__global__ void bgr_to_nchw_norm(const unsigned char* __restrict__ bgr,
-                                 int inW,int inH,int inStride,
-                                 float* __restrict__ out, int outW,int outH,
-                                 float sx,float sy, int padX,int padY)
-{
-  int x = blockIdx.x*blockDim.x + threadIdx.x;
-  int y = blockIdx.y*blockDim.y + threadIdx.y;
-  if (x>=outW || y>=outH) return;
-  int ix = min(inW-1, max(0, int((x - padX)/sx)));
-  int iy = min(inH-1, max(0, int((y - padY)/sy)));
-  const unsigned char* p = bgr + iy*inStride + ix*3;
-  float b = p[0]*(1.f/255.f), g=p[1]*(1.f/255.f), r=p[2]*(1.f/255.f);
-  int area = outW*outH;
-  out[0*area + y*outW + x] = r;
-  out[1*area + y*outW + x] = g;
-  out[2*area + y*outW + x] = b;
-}
 
 class TrtDetectorNode : public rclcpp::Node {
 public:
@@ -67,7 +53,7 @@ public:
     pub_img_ = it_->advertise(annotated_topic_, 1);
     pub_det_ = this->create_publisher<Detection2DArray>(detections_topic_, qos);
 
-    // Load engine
+    // Load TRT engine
     std::ifstream f(engine_path_, std::ios::binary);
     if(!f) throw std::runtime_error("TRT engine not found at: " + engine_path_);
     f.seekg(0,std::ios::end); size_t sz=f.tellg(); f.seekg(0);
@@ -77,37 +63,55 @@ public:
     engine_.reset(runtime_->deserializeCudaEngine(buf.data(), sz));
     if(!engine_) throw std::runtime_error("deserializeCudaEngine failed");
     ctx_.reset(engine_->createExecutionContext());
-    inIndex_  = engine_->getBindingIndex(input_binding_.c_str());
-    outIndex_ = engine_->getBindingIndex(output_binding_.c_str());
-    inDims_   = engine_->getBindingDimensions(inIndex_);
-    outDims_  = engine_->getBindingDimensions(outIndex_);
-    if (inDims_.nbDims!=4) throw std::runtime_error("Unexpected input dims");
+
+    // ---- IO-BY-NAME API (TRT 8.6+) ----
+    const int nIO = engine_->getNbIOTensors();
+    for (int i=0;i<nIO;i++){
+      const char* nm = engine_->getIOTensorName(i);
+      auto mode = engine_->getTensorIOMode(nm);
+      if (mode == nvinfer1::TensorIOMode::kINPUT)  inputs_.push_back(nm);
+      if (mode == nvinfer1::TensorIOMode::kOUTPUT) outputs_.push_back(nm);
+    }
+    if (std::find(inputs_.begin(), inputs_.end(), input_binding_) == inputs_.end())
+      input_binding_  = inputs_.empty() ? "" : inputs_.front();
+    if (std::find(outputs_.begin(), outputs_.end(), output_binding_) == outputs_.end())
+      output_binding_ = outputs_.empty() ? "" : outputs_.front();
+    if (input_binding_.empty() || output_binding_.empty())
+      throw std::runtime_error("Could not resolve TRT I/O tensor names");
+
+    // Input dims expected as [N,C,H,W]
+    inDims_ = engine_->getTensorShape(input_binding_.c_str());
+    if (inDims_.nbDims != 4) throw std::runtime_error("Unexpected input dims (expect NCHW)");
     netC_ = inDims_.d[1]; netH_ = inDims_.d[2]; netW_ = inDims_.d[3];
 
+    outDims_ = engine_->getTensorShape(output_binding_.c_str());
+    size_t outCount = 1; for (int i=0;i<outDims_.nbDims;i++) outCount *= outDims_.d[i];
+
     CHECK_CUDA(cudaStreamCreate(&stream_));
-    size_t inBytes=netC_*netH_*netW_*sizeof(float);
-    size_t outCount=1; for(int i=0;i<outDims_.nbDims;i++) outCount*=outDims_.d[i];
-    size_t outBytes= outCount*sizeof(float);
+    size_t inBytes  = (size_t)netC_*netH_*netW_*sizeof(float);
+    size_t outBytes = outCount*sizeof(float);
     CHECK_CUDA(cudaMalloc(&dIn_,  inBytes));
     CHECK_CUDA(cudaMalloc(&dOut_, outBytes));
     hOut_.resize(outCount);
 
-    RCLCPP_INFO(get_logger(),"TRT ready: %dx%dx%d → out count %zu", netC_, netH_, netW_, outCount);
+    RCLCPP_INFO(get_logger(),
+      "TRT ready: input=%s (%dx%dx%d), output=%s, outCount=%zu",
+      input_binding_.c_str(), netC_, netH_, netW_, output_binding_.c_str(), outCount);
   }
 
   ~TrtDetectorNode(){
-    if (dIn_) cudaFree(dIn_);
+    if (mapped_host_) cudaHostUnregister(mapped_host_);
+    if (dIn_)  cudaFree(dIn_);
     if (dOut_) cudaFree(dOut_);
     if (stream_) cudaStreamDestroy(stream_);
   }
 
 private:
   void cb(const sensor_msgs::msg::Image::ConstSharedPtr& msg){
-    // BGR frame
     auto cv = cv_bridge::toCvShare(msg, "bgr8");
-    const int inW = cv->image.cols, inH = cv->image.rows, inStride = cv->image.step;
+    const int inW = cv->image.cols, inH = cv->image.rows, inStride = (int)cv->image.step;
 
-    // Register current buffer as mapped (avoid device memcpy). If the pointer changes, re-register.
+    // Pinned zero-copy map for current frame
     size_t bytes = (size_t)inStride * inH;
     if (mapped_host_ != cv->image.data) {
       if (mapped_host_) cudaHostUnregister(mapped_host_);
@@ -116,32 +120,34 @@ private:
       CHECK_CUDA(cudaHostGetDevicePointer(&mapped_dev_, mapped_host_, 0));
     }
 
-    // Preprocess on GPU
+    // Letterbox scale to net input
     float sx = std::min((float)netW_/inW, (float)netH_/inH);
     int padX = (int)((netW_ - inW*sx)/2), padY = (int)((netH_ - inH*sx)/2);
-    dim3 block(16,16), grid((netW_+15)/16, (netH_+15)/16);
-    bgr_to_nchw_norm<<<grid,block,0,stream_>>>(
-      (const unsigned char*)mapped_dev_, inW,inH,inStride,
-      (float*)dIn_, netW_,netH_, sx,sx, padX,padY);
-    CHECK_CUDA(cudaPeekAtLastError());
 
-    // Infer
-    void* bindings[2]; bindings[inIndex_] = dIn_; bindings[outIndex_] = dOut_;
-    if (!ctx_->enqueueV3(stream_, bindings)){
-      RCLCPP_WARN(get_logger(),"TRT enqueue failed"); return;
+    // CUDA preprocess
+    launch_bgr_to_nchw_norm((const unsigned char*)mapped_dev_, inW,inH,inStride,
+                            (float*)dIn_, netW_,netH_, sx,sx, padX,padY, stream_);
+
+    // Bind I/O by name and run
+    ctx_->setTensorAddress(input_binding_.c_str(),  dIn_);
+    ctx_->setTensorAddress(output_binding_.c_str(), dOut_);
+    if (!ctx_->enqueueV3(stream_)) {
+      RCLCPP_WARN(get_logger(),"TRT enqueueV3 failed");
+      return;
     }
 
-    // Copy output to host & sync
-    size_t outCount = hOut_.size();
-    CHECK_CUDA(cudaMemcpyAsync(hOut_.data(), dOut_, outCount*sizeof(float), cudaMemcpyDeviceToHost, stream_));
+    // Copy output back
+    CHECK_CUDA(cudaMemcpyAsync(hOut_.data(), dOut_, hOut_.size()*sizeof(float),
+                               cudaMemcpyDeviceToHost, stream_));
     CHECK_CUDA(cudaStreamSynchronize(stream_));
 
-    // Decode YOLOv8 head: [1, nAttr=84, nBoxes]
-    int nAttr = outDims_.d[1], nBox = outDims_.d[2];
+    // YOLOv8 head: [1, nAttr, nBox]
+    const int nAttr = outDims_.d[1];
+    const int nBox  = outDims_.d[2];
     auto at = [&](int a,int b)->float { return hOut_[a*nBox + b]; };
 
     std::vector<cv::Rect> rawB; std::vector<int> rawC; std::vector<float> rawS;
-    rawB.reserve(200); rawC.reserve(200); rawS.reserve(200);
+    rawB.reserve(256); rawC.reserve(256); rawS.reserve(256);
 
     for (int b=0;b<nBox;b++){
       float obj = at(4,b);
@@ -164,10 +170,9 @@ private:
       rawS.emplace_back(conf);
     }
 
-    // NMS
     std::vector<int> keep; cv::dnn::NMSBoxes(rawB, rawS, (float)conf_th_, (float)iou_th_, keep);
 
-    // Publish detections + annotated image
+    // Publish
     Detection2DArray arr; arr.header = msg->header;
     cv::Mat anno = cv->image.clone();
     for (int i : keep){
@@ -175,10 +180,12 @@ private:
       cv::rectangle(anno, r, {0,255,0}, 2);
       cv::putText(anno, cv::format("%d %.2f", rawC[i], rawS[i]),
                   {r.x, std::max(0,r.y-5)}, cv::FONT_HERSHEY_SIMPLEX, 0.5, {0,255,0}, 1);
+
       Detection2D d;
-      d.bbox.center.x = r.x + r.width/2.0;
-      d.bbox.center.y = r.y + r.height/2.0;
+      Pose2D c; c.x = r.x + r.width/2.0; c.y = r.y + r.height/2.0; c.theta = 0.0;
+      d.bbox.center = c;
       d.bbox.size_x = r.width; d.bbox.size_y = r.height;
+
       ObjectHypothesisWithPose hyp;
       hyp.hypothesis.class_id = std::to_string(rawC[i]);
       hyp.hypothesis.score = rawS[i];
@@ -189,12 +196,13 @@ private:
     pub_img_.publish(cv_bridge::CvImage(msg->header, "bgr8", anno).toImageMsg());
   }
 
-  // Members
+  // ROS
   std::shared_ptr<image_transport::ImageTransport> it_;
   image_transport::Subscriber sub_;
   image_transport::Publisher  pub_img_;
   rclcpp::Publisher<Detection2DArray>::SharedPtr pub_det_;
 
+  // params
   std::string input_topic_, annotated_topic_, detections_topic_, engine_path_;
   std::string input_binding_, output_binding_;
   double conf_th_{0.35}, iou_th_{0.5};
@@ -203,15 +211,15 @@ private:
   std::unique_ptr<nvinfer1::IRuntime> runtime_{};
   std::unique_ptr<nvinfer1::ICudaEngine> engine_{};
   std::unique_ptr<nvinfer1::IExecutionContext> ctx_{};
-  int inIndex_{-1}, outIndex_{-1};
   nvinfer1::Dims inDims_{}, outDims_{};
   int netC_{3}, netH_{640}, netW_{640};
+  std::vector<std::string> inputs_, outputs_;
   void* dIn_{nullptr};
   void* dOut_{nullptr};
   cudaStream_t stream_{};
   std::vector<float> hOut_;
 
-  // mapped host buffer alias (zero-copy into GPU address space)
+  // pinned zero-copy alias
   unsigned char* mapped_host_{nullptr};
   unsigned char* mapped_dev_{nullptr};
 };

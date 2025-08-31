@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 3.10)
-project(shobo_detectors)
+cmake_minimum_required(VERSION 3.18)
+project(shobo_detectors LANGUAGES CXX CUDA)
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -9,17 +9,35 @@ find_package(image_transport REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
 
-enable_language(CUDA)
-find_library(TENSORRT_LIB nvinfer)
-find_library(TENSORRT_PLUGIN_LIB nvinfer_plugin)
-find_library(CUDART_LIB cudart)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CUDA_STANDARD 14)
 
-add_executable(detector_node src/trt_detector_node.cpp)
+# Our headers (for kernels.hpp)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+# CUDA include/lib (JetPack default install)
+include_directories(/usr/local/cuda/include)
+find_library(CUDART_LIB cudart HINTS /usr/local/cuda/lib64 REQUIRED)
+
+# Build kernels as object lib then link into the node
+add_library(cuda_kernels OBJECT src/kernels.cu)
+set_target_properties(cuda_kernels PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_compile_options(cuda_kernels PRIVATE
+  $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>)
+
+add_executable(detector_node
+  src/trt_detector_node.cpp
+  $<TARGET_OBJECTS:cuda_kernels>
+)
 ament_target_dependencies(detector_node
   rclcpp sensor_msgs vision_msgs image_transport cv_bridge)
+target_include_directories(detector_node PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(detector_node
-  ${OpenCV_LIBS} ${TENSORRT_LIB} ${TENSORRT_PLUGIN_LIB} ${CUDART_LIB})
-set_target_properties(detector_node PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_STANDARD 14)
+  ${OpenCV_LIBS}
+  nvinfer
+  nvinfer_plugin
+  ${CUDART_LIB}
+)
 
 install(TARGETS detector_node DESTINATION lib/${PROJECT_NAME})
 ament_package()
