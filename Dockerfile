@@ -1,58 +1,113 @@
+# ------------------------------------------------------------
 # JetPack 6.2.x (R36.4.x) + CUDA/TRT base
+# ------------------------------------------------------------
 ARG L4T_TAG=r36.4.0
 FROM nvcr.io/nvidia/l4t-jetpack:${L4T_TAG}
 
+# ------------------------------------------------------------
+# Environment
+# ------------------------------------------------------------
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     LANG=C.UTF-8 \
-    ROS_DISTRO=humble
+    ROS_DISTRO=humble \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
 
-# OS basics & build tools
-RUN apt-get update && apt-get install -y --no-install-recommends \
+SHELL ["/bin/bash","-lc"]
+
+# ------------------------------------------------------------
+# OS basics & build toolchain
+# ------------------------------------------------------------
+RUN set -e \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
       curl gnupg2 lsb-release locales ca-certificates software-properties-common \
       build-essential cmake git wget unzip pkg-config \
-      python3-pip \
+      python3 python3-pip python3-setuptools python3-wheel python3-numpy \
       v4l-utils \
-      libopencv-dev \
       libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
       gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
-      gstreamer1.0-plugins-ugly gstreamer1.0-libav && \
-    add-apt-repository -y universe && \
-    locale-gen en_US.UTF-8 && update-locale LANG=en_US.UTF-8
+      gstreamer1.0-plugins-ugly gstreamer1.0-libav \
+      # We need OpenCV *dev* headers that match Ubuntu/ROS ABI
+      libopencv-dev \
+ && add-apt-repository -y universe \
+ && locale-gen en_US.UTF-8 && update-locale LANG=en_US.UTF-8 \
+ && rm -rf /var/lib/apt/lists/*
 
-# Colcon + vcstool via pip
-RUN python3 -m pip install --no-cache-dir -U pip setuptools wheel && \
-    python3 -m pip install --no-cache-dir vcstool colcon-common-extensions
-
-# Add ROS 2 Humble apt repo and install ROS packages
-RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
-      | gpg --dearmor -o /usr/share/keyrings/ros-archive-keyring.gpg && \
-    echo "deb [arch=arm64 signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
+# ------------------------------------------------------------
+# ROS 2 Humble (Jammy) — pin to official ROS repo
+# ------------------------------------------------------------
+RUN set -e \
+ && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+      | gpg --dearmor -o /usr/share/keyrings/ros-archive-keyring.gpg \
+ && echo "deb [arch=arm64 signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
       http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" \
-      > /etc/apt/sources.list.d/ros2.list && \
-    apt-get update && apt-get install -y --no-install-recommends \
-      ros-humble-desktop \
-      ros-humble-image-transport ros-humble-image-transport-plugins \
-      ros-humble-cv-bridge ros-humble-camera-info-manager ros-humble-vision-msgs \
-      python3-rosdep && \
-    rm -rf /var/lib/apt/lists/*
+      > /etc/apt/sources.list.d/ros2.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ros-${ROS_DISTRO}-desktop \
+      ros-${ROS_DISTRO}-image-transport ros-${ROS_DISTRO}-image-transport-plugins \
+      ros-${ROS_DISTRO}-cv-bridge ros-${ROS_DISTRO}-camera-info-manager ros-${ROS_DISTRO}-vision-msgs \
+      ros-${ROS_DISTRO}-sensor-msgs \
+      python3-rosdep python3-vcstool python3-colcon-common-extensions \
+ && rm -rf /var/lib/apt/lists/*
 
-# Ensure ROS is sourced by default shells (nice to have)
-SHELL ["/bin/bash","-lc"]
+# ------------------------------------------------------------
+# TensorRT dev headers (NvInfer.h) — explicit for builds
+# (JetPack provides runtime by default; we add -dev to compile C++)
+# ------------------------------------------------------------
+RUN set -e \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+      libnvinfer-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+# ------------------------------------------------------------
+# Safety checks — fail fast if CUDA/TRT headers are missing
+# and guard against stray OpenCV copies in /usr/local
+# ------------------------------------------------------------
+RUN set -e \
+ && test -f /usr/local/cuda/include/cuda_runtime_api.h || { echo "FATAL: Missing CUDA headers (cuda_runtime_api.h)"; exit 1; } \
+ && test -f /usr/include/aarch64-linux-gnu/NvInfer.h   || { echo "FATAL: Missing TensorRT headers (NvInfer.h). Install libnvinfer-dev"; exit 1; } \
+ && if compgen -G "/usr/local/lib/libopencv_core.so*" > /dev/null; then \
+        echo "FATAL: Detected OpenCV in /usr/local (likely custom/pip build) — this will conflict with ROS cv_bridge. Remove it."; \
+        ls -l /usr/local/lib/libopencv_core.so*; exit 1; \
+    else echo "[OK] No stray /usr/local OpenCV found."; fi
+
+# ------------------------------------------------------------
+# Make ROS available to all shells
+# ------------------------------------------------------------
 RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /etc/bash.bashrc
 
+# ------------------------------------------------------------
 # Workspace
+# ------------------------------------------------------------
 WORKDIR /work/ros2_ws
 COPY ros2_ws/src ./src
 
-# Resolve deps and build (explicitly source ROS before colcon)
-RUN bash -lc 'set -e \
-  && source /opt/ros/${ROS_DISTRO}/setup.bash \
-  && rosdep init || true \
-  && rosdep update \
-  && apt-get update \
-  && rosdep install --from-paths src --ignore-src -r -y \
-  && colcon build --symlink-install \
-  && rm -rf /var/lib/apt/lists/*'
+# Resolve rosdeps (running as root is fine in Docker)
+RUN set -e \
+ && source /opt/ros/${ROS_DISTRO}/setup.bash \
+ && rosdep init || true \
+ && rosdep update \
+ && apt-get update \
+ && rosdep install --from-paths src --ignore-src -r -y \
+ && rm -rf /var/lib/apt/lists/*
+
+# ------------------------------------------------------------
+# Build — explicit Release to avoid debug-ABI quirks
+# ------------------------------------------------------------
+RUN set -e \
+ && source /opt/ros/${ROS_DISTRO}/setup.bash \
+ && colcon build --symlink-install \
+      --merge-install \
+      --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+# ------------------------------------------------------------
+# Default entry: bringup
+# ------------------------------------------------------------
+ENV ROS_LOG_DIR=/work/ros2_ws/logs
+RUN mkdir -p ${ROS_LOG_DIR}
 
 CMD bash -lc "source /opt/ros/${ROS_DISTRO}/setup.bash && source install/setup.bash && ros2 launch shobo_bringup perception.launch.py"

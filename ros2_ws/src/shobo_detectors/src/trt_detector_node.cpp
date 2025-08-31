@@ -5,7 +5,7 @@
 #include <vision_msgs/msg/detection2_d.hpp>
 #include <vision_msgs/msg/detection2_d_array.hpp>
 #include <vision_msgs/msg/object_hypothesis_with_pose.hpp>
-#include <geometry_msgs/msg/pose2_d.hpp>
+#include <vision_msgs/msg/pose2_d.hpp>
 
 #include <cv_bridge/cv_bridge.h>
 
@@ -23,7 +23,7 @@
 using vision_msgs::msg::Detection2DArray;
 using vision_msgs::msg::Detection2D;
 using vision_msgs::msg::ObjectHypothesisWithPose;
-using geometry_msgs::msg::Pose2D;
+using vision_msgs::msg::Pose2D;
 
 #define CHECK_CUDA(x) do{ cudaError_t e=(x); if(e!=cudaSuccess){throw std::runtime_error(cudaGetErrorString(e));} }while(0)
 
@@ -182,7 +182,10 @@ private:
                   {r.x, std::max(0,r.y-5)}, cv::FONT_HERSHEY_SIMPLEX, 0.5, {0,255,0}, 1);
 
       Detection2D d;
-      Pose2D c; c.x = r.x + r.width/2.0; c.y = r.y + r.height/2.0; c.theta = 0.0;
+      Pose2D c;
+      c.position.x = r.x + r.width * 0.5;
+      c.position.y = r.y + r.height * 0.5;
+      c.theta = 0.0;
       d.bbox.center = c;
       d.bbox.size_x = r.width; d.bbox.size_y = r.height;
 

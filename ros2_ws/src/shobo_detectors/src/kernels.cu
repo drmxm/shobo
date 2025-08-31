@@ -1,39 +1,48 @@
 #include <cuda_runtime.h>
-#include <algorithm>
 
-#define CUDA_CHECK(x) do{auto e=(x); if(e!=cudaSuccess){asm("nop");}}while(0)
-
-__global__ void bgr_to_nchw_norm_kernel(const unsigned char* __restrict__ bgr,
-                                        int inW,int inH,int inStride,
-                                        float* __restrict__ out, int outW,int outH,
-                                        float sx,float sy, int padX,int padY)
+__global__ void bgr_to_nchw_norm_kernel(
+    const unsigned char* __restrict__ bgr,
+    int inW, int inH, int inStride,
+    float* __restrict__ out,
+    int outW, int outH,
+    float sx, float sy,
+    int padX, int padY)
 {
-  int x = blockIdx.x*blockDim.x + threadIdx.x;
-  int y = blockIdx.y*blockDim.y + threadIdx.y;
-  if (x>=outW || y>=outH) return;
+  const int x = blockIdx.x * blockDim.x + threadIdx.x;
+  const int y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x >= outW || y >= outH) return;
 
-  int ix = min(inW-1, max(0, int((x - padX)/sx)));
-  int iy = min(inH-1, max(0, int((y - padY)/sy)));
-  const unsigned char* p = bgr + iy*inStride + ix*3;
+  const float srcXf = (x - padX) / sx;
+  const float srcYf = (y - padY) / sy;
+  const int   srcX  = static_cast<int>(roundf(srcXf));
+  const int   srcY  = static_cast<int>(roundf(srcYf));
 
-  float b = p[0]*(1.f/255.f);
-  float g = p[1]*(1.f/255.f);
-  float r = p[2]*(1.f/255.f);
+  float r = 0.f, g = 0.f, b = 0.f;
+  if (srcX >= 0 && srcX < inW && srcY >= 0 && srcY < inH) {
+    const unsigned char* p = bgr + srcY * inStride + srcX * 3;
+    const float inv255 = 1.0f / 255.0f;
+    b = static_cast<float>(p[0]) * inv255;
+    g = static_cast<float>(p[1]) * inv255;
+    r = static_cast<float>(p[2]) * inv255;
+  }
 
-  int area = outW*outH;
-  out[0*area + y*outW + x] = r;
-  out[1*area + y*outW + x] = g;
-  out[2*area + y*outW + x] = b;
+  const int o = y * outW + x;
+  out[o]                   = r;
+  out[outW * outH + o]     = g;
+  out[2 * outW * outH + o] = b;
 }
 
-extern "C" void launch_bgr_to_nchw_norm(const unsigned char* bgr,
-                                        int inW, int inH, int inStride,
-                                        float* out, int outW, int outH,
-                                        float sx, float sy, int padX, int padY,
-                                        cudaStream_t stream)
+extern "C" void launch_bgr_to_nchw_norm(
+    const unsigned char* bgr,
+    int inW, int inH, int inStride,
+    float* out,
+    int outW, int outH,
+    float sx, float sy,
+    int padX, int padY,
+    cudaStream_t stream)
 {
-  dim3 block(16,16);
-  dim3 grid((outW+block.x-1)/block.x, (outH+block.y-1)/block.y);
+  dim3 block(16, 16);
+  dim3 grid((outW + block.x - 1) / block.x, (outH + block.y - 1) / block.y);
   bgr_to_nchw_norm_kernel<<<grid, block, 0, stream>>>(
       bgr, inW, inH, inStride, out, outW, outH, sx, sy, padX, padY);
 }
