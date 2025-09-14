@@ -16,8 +16,6 @@
   <depend>vision_msgs</depend>
   <depend>geometry_msgs</depend>
 
-  <!-- TensorRT/CUDA are system deps; don't rosdep them to avoid conflicts -->
-
   <export>
     <build_type>ament_cmake</build_type>
   </export>
