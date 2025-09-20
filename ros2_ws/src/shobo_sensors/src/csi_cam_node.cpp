@@ -26,7 +26,9 @@ public:
     gst << "nvarguscamerasrc sensor-id=" << sensor_id << " ! "
         << "video/x-raw(memory:NVMM),width="<<width<<",height="<<height<<",framerate="<<fps<<"/1,format=NV12 ! "
         << "queue max-size-buffers=1 leaky=downstream ! "
-        << "videoconvert ! video/x-raw,format=BGR ! appsink name=sink sync=false max-buffers=1 drop=true";
+        << "nvvidconv ! video/x-raw,format=BGRx ! "
+        << "videoconvert ! video/x-raw,format=BGR ! "
+        << "appsink name=sink sync=false max-buffers=1 drop=true";
 
     cap_.open(gst.str(), cv::CAP_GSTREAMER);
     if (!cap_.isOpened()) throw std::runtime_error("Failed to open CSI via GStreamer");
@@ -40,6 +42,10 @@ private:
   void tick(){
     cv::Mat bgr;
     if (!cap_.read(bgr)) return;
+    if (bgr.empty()) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *this->get_clock(), 3000, "Received empty frame from %s", frame_id_.c_str());
+      return;
+    }
 
     auto stamp = this->now();
     auto msg = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", bgr).toImageMsg();
