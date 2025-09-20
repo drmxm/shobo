@@ -1,21 +1,10 @@
 shobo_sensors:
   ros__parameters:
-    # CSI camera (IMX219)
-    sensor_id: 0
-    width: 1280
-    height: 720
-    fps: 30
-    frame_id: "ir_frame"
-    camera_name: "ir_imx219"
-    camera_info_url: ""
-
-    # Argus -> NVMM -> BGRx -> BGR -> appsink
-    use_gst: true
-    gst_pipeline: >
-      nvarguscamerasrc sensor-id=0 !
-      video/x-raw(memory:NVMM),width=1280,height=720,framerate=30/1 !
-      nvvidconv !
-      video/x-raw,format=BGRx !
-      videoconvert !
-      video/x-raw,format=BGR !
-      appsink drop=true max-buffers=1 sync=false
+    ir:
+      sensor_id: 0
+      width: 1280
+      height: 720
+      fps: 30
+      frame_id: "ir_frame"
+      camera_name: "ir_imx219"
+      camera_info_url: ""

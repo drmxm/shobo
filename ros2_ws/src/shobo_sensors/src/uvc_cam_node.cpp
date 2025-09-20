@@ -37,13 +37,24 @@ private:
   bool open_camera(bool relax = true) {
     cap_.release();
 
-    std::ostringstream pipeline;
-    pipeline << "v4l2src device=" << device_;
-    pipeline << " ! video/x-raw,width=" << width_ << ",height=" << height_;
-    if (fps_ > 0) pipeline << ",framerate=" << fps_ << "/1";
-    pipeline << " ! videoconvert ! video/x-raw,format=BGR ! appsink drop=true sync=false max-buffers=1";
+    auto build_pipeline = [&](bool include_fps) {
+      std::ostringstream pipeline;
+      pipeline << "v4l2src device=" << device_;
+      pipeline << " ! video/x-raw,width=" << width_ << ",height=" << height_;
+      if (include_fps && fps_ > 0) {
+        pipeline << ",framerate=" << fps_ << "/1";
+      }
+      pipeline << " ! videoconvert ! video/x-raw,format=BGR ! appsink drop=true sync=false max-buffers=1";
+      return pipeline.str();
+    };
 
-    if (cap_.open(pipeline.str(), cv::CAP_GSTREAMER)) {
+    if (cap_.open(build_pipeline(true), cv::CAP_GSTREAMER)) {
+      using_gstreamer_ = true;
+      return true;
+    }
+
+    if (fps_ > 0 && cap_.open(build_pipeline(false), cv::CAP_GSTREAMER)) {
+      RCLCPP_WARN(get_logger(), "Opened %s without enforcing FPS caps", device_.c_str());
       using_gstreamer_ = true;
       return true;
     }
