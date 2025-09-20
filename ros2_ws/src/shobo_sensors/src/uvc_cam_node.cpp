@@ -17,8 +17,7 @@ public:
     std::string cname = this->declare_parameter<std::string>("rgb.camera_name", "rgb_uvc");
     std::string ciurl = this->declare_parameter<std::string>("rgb.camera_info_url", "");
 
-    it_ = std::make_shared<image_transport::ImageTransport>(shared_from_this());
-    pub_img_ = it_->advertise("image_raw", 1);
+    pub_img_ = image_transport::create_publisher(this, "image_raw");
     pub_info_ = this->create_publisher<sensor_msgs::msg::CameraInfo>("camera_info", rclcpp::SensorDataQoS());
     cinfo_ = std::make_shared<camera_info_manager::CameraInfoManager>(this, cname, ciurl);
 
@@ -50,7 +49,6 @@ private:
     pub_info_->publish(info);
   }
 
-  std::shared_ptr<image_transport::ImageTransport> it_;
   image_transport::Publisher pub_img_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr pub_info_;
   std::shared_ptr<camera_info_manager::CameraInfoManager> cinfo_;

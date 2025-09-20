@@ -20,7 +20,7 @@ services:
       - IR_SENSOR_ID=0
       - ROS_DISTRO=humble
       # Make sure runtime can find Jetson & CUDA libs:
-      - LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu/tegra:/usr/local/cuda/targets/aarch64-linux/lib:${LD_LIBRARY_PATH}
+      - LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu/tegra:/usr/local/cuda/targets/aarch64-linux/lib
     devices:
       - /dev/video0:/dev/video0
       - /dev/video1:/dev/video1
