@@ -7,4 +7,4 @@ shobo_sensors:
       fps: 30
       frame_id: "ir_frame"
       camera_name: "ir_imx219"
-      camera_info_url: ""
+      camera_info_url: "package://shobo_bringup/config/camera_info/ir_imx219.yaml"

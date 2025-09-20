@@ -129,3 +129,31 @@ docker compose logs -f perception
   gst-launch-1.0 nvarguscamerasrc sensor-id=0 ! 'video/x-raw(memory:NVMM),width=1280,height=720,framerate=30/1' ! nvvidconv ! videoconvert ! fakesink -v
   ```
 
+# 1) Only running containers
+docker ps
+
+# 2) Running + key fields (one line per container)
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}\t{{.RunningFor}}'
+
+# 3) Compose view (shows service names)
+docker compose ps
+
+# 4) Live CPU/MEM/NET/IO (press Ctrl+C to exit)
+docker stats
+
+# 5) One-shot resource snapshot (no stream)
+docker stats --no-stream
+
+# 6) Processes inside a running container
+docker top <container_name>
+
+# 7) Health status flag (for all running)
+docker ps --format '{{.Names}}\t{{.Status}}' | column -t
+
+# 8) Logs (last 100 lines, then follow)
+docker logs -n 100 -f <container_name>
+
+# 9) Inspect specifics (status/health/ports)
+docker inspect --format \
+'{{.Name}} | state={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{end}} | ports={{range $p,$cfg := .NetworkSettings.Ports}}{{printf "%s " $p}}{{end}}' \
+$(docker ps -q)

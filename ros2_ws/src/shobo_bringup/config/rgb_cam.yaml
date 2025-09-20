@@ -7,4 +7,4 @@ shobo_sensors:
       fps: 10
       frame_id: "rgb_frame"
       camera_name: "rgb_uvc"
-      camera_info_url: ""
+      camera_info_url: "package://shobo_bringup/config/camera_info/rgb_uvc.yaml"
