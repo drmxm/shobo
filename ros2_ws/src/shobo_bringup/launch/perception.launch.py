@@ -7,6 +7,7 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
     share_dir = get_package_share_directory('shobo_bringup')
     rgb_cfg = os.path.join(share_dir, 'config', 'rgb_cam.yaml')
+    rgb_device = os.environ.get('RGB_DEV', '/dev/video1')
     ir_cfg  = os.path.join(share_dir, 'config', 'ir_cam.yaml')
 
     uvc_gst = (
@@ -26,7 +27,7 @@ def generate_launch_description():
     return LaunchDescription([
         Node(
             package='shobo_sensors', executable='uvc_cam_node', name='rgb_cam',
-            parameters=[rgb_cfg, {'use_gst': True, 'gst_pipeline': uvc_gst}],
+            parameters=[rgb_cfg, {'rgb.device': rgb_device}],
             remappings=[('image_raw','/sensors/rgb/image_raw'),
                         ('camera_info','/sensors/rgb/camera_info')]
         ),
