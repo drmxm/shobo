@@ -1,23 +1,38 @@
 services:
   perception:
-    build: .
+    build:
+      context: .
+      args:
+        L4T_TAG: r36.4.0
     container_name: shobo-perception
     restart: unless-stopped
     network_mode: host
     runtime: nvidia
+    privileged: true
+    ipc: host
+    user: "0:0"
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
       - DISPLAY=${DISPLAY}
       - QT_X11_NO_MITSHM=1
-      - RGB_DEV=/dev/video1         # adjust if your RGB UVC is a different node
-      - IR_SENSOR_ID=0              # IMX219 on CSI sensor index
+      - RGB_DEV=/dev/video1
+      - IR_SENSOR_ID=0
+      - ROS_DISTRO=humble
+      # Make sure runtime can find Jetson & CUDA libs:
+      - LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu/tegra:/usr/local/cuda/targets/aarch64-linux/lib
     devices:
       - /dev/video0:/dev/video0
       - /dev/video1:/dev/video1
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /tmp/argus_socket:/tmp/argus_socket
+      # Mount model/config only (do NOT mount whole ros2_ws here)
       - ./ros2_ws/yolov8n.engine:/work/ros2_ws/yolov8n.engine:ro
+      - ./ros2_ws/yolov8n.json:/work/ros2_ws/yolov8n.json:ro
+    group_add:
+      - "44" # video
+
   engine:
     build:
       context: .
@@ -32,6 +47,7 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=all
     volumes:
       - .:/work
-      - ./ros2_ws:/work/ros2_ws           # save engine here
-      - ./tools:/work/tools:ro            # exporter script
+      - ./ros2_ws:/work/ros2_ws
+      - ./tools:/work/tools:ro
     working_dir: /work
+    profiles: ["engine-builder"]
