@@ -48,15 +48,25 @@ private:
       return pipeline.str();
     };
 
-    if (cap_.open(build_pipeline(true), cv::CAP_GSTREAMER)) {
-      using_gstreamer_ = true;
-      return true;
-    }
+    if (!force_v4l2_) {
+      if (cap_.open(build_pipeline(true), cv::CAP_GSTREAMER)) {
+        using_gstreamer_ = true;
+        gst_failures_ = 0;
+        return true;
+      }
 
-    if (fps_ > 0 && cap_.open(build_pipeline(false), cv::CAP_GSTREAMER)) {
-      RCLCPP_WARN(get_logger(), "Opened %s without enforcing FPS caps", device_.c_str());
-      using_gstreamer_ = true;
-      return true;
+      if (fps_ > 0 && cap_.open(build_pipeline(false), cv::CAP_GSTREAMER)) {
+        RCLCPP_WARN(get_logger(), "Opened %s without enforcing FPS caps", device_.c_str());
+        using_gstreamer_ = true;
+        gst_failures_ = 0;
+        return true;
+      }
+
+      gst_failures_++;
+      if (gst_failures_ >= 3) {
+        force_v4l2_ = true;
+        RCLCPP_WARN(get_logger(), "Disabling GStreamer path for %s after %d failures", device_.c_str(), gst_failures_);
+      }
     }
 
     if (!relax) {
@@ -66,6 +76,7 @@ private:
     cap_.release();
     if (cap_.open(device_, cv::CAP_V4L2)) {
       using_gstreamer_ = false;
+      gst_failures_ = 0;
       cap_.set(cv::CAP_PROP_FRAME_WIDTH,  width_);
       cap_.set(cv::CAP_PROP_FRAME_HEIGHT, height_);
       if (fps_ > 0) cap_.set(cv::CAP_PROP_FPS, fps_);
@@ -77,7 +88,7 @@ private:
 
   void tick(){
     if (!cap_.isOpened()) {
-      if (open_camera(false)) {
+      if (open_camera()) {
         RCLCPP_INFO(get_logger(), "Re-opened %s (%s)", device_.c_str(), using_gstreamer_ ? "GStreamer" : "V4L2");
       } else {
         RCLCPP_WARN_THROTTLE(get_logger(), *this->get_clock(), 3000, "Camera %s unavailable", device_.c_str());
@@ -121,6 +132,8 @@ private:
   int height_{0};
   int fps_{0};
   bool using_gstreamer_{false};
+  int gst_failures_{0};
+  bool force_v4l2_{false};
 };
 
 int main(int argc, char** argv){
