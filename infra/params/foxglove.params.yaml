@@ -1,0 +1,14 @@
+foxglove_bridge:
+  ros__parameters:
+    # General
+    # address and port overridden by CLI params from start.sh
+    use_compression: false         # Foxglove binary frame compression off (set true if needed)
+    # Topic defaults; bridge discovers ROS graph dynamically.
+    # QoS overrides can go here if you see mismatches with publishers.
+    # Example (uncomment & edit exact topics):
+    # qos_overrides:
+    #   "/sensors/uvc/image_raw":
+    #     reliability: best_effort
+    #     durability: volatile
+    #     history: keep_last
+    #     depth: 2

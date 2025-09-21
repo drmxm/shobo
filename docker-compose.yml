@@ -51,3 +51,28 @@ services:
       - ./tools:/work/tools:ro
     working_dir: /work
     profiles: ["engine-builder"]
+  
+# ====================== INFRA (Foxglove bridge / WS) ======================
+  infra:
+    container_name: shobo-infra
+    build:
+      context: .
+    image: shobo-infra:latest
+    network_mode: host
+    ipc: host
+    restart: unless-stopped
+    depends_on:
+      sensors_uvc_rgb:
+        condition: service_started   # start even if sensor health is picky
+    environment:
+      ROS_DOMAIN_ID: "0"
+      FOXGLOVE_PORT: "${FOXGLOVE_PORT:-8765}"
+      FOXGLOVE_ADDRESS: "0.0.0.0"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 ${FOXGLOVE_PORT:-8765}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    command: ["/start.sh"]
+    profiles: ["infra"]
