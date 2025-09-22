@@ -9,6 +9,9 @@ def generate_launch_description():
     rgb_cfg = os.path.join(share_dir, 'config', 'rgb_cam.yaml')
     rgb_device = os.environ.get('RGB_DEV', '/dev/video1')
     ir_cfg  = os.path.join(share_dir, 'config', 'ir_cam.yaml')
+    detectors_cfg = os.path.join(share_dir, 'config', 'detectors.yaml')
+    engine_path = os.environ.get('YOLO_ENGINE', '/work/ros2_ws/yolov8n.engine')
+    publish_annotated = os.environ.get('PUBLISH_ANNOTATED', 'true').lower() not in ('0', 'false', 'no')
 
     uvc_gst = (
         "v4l2src device=/dev/video1 ! "
@@ -38,16 +41,18 @@ def generate_launch_description():
                         ('camera_info','/sensors/ir/camera_info')]
         ),
         Node(
-            package='shobo_detectors', executable='detector_node', name='trt_detector',
-            parameters=[{
-              'input_topic': '/sensors/rgb/image_raw',
-              'annotated_topic': '/perception/annotated',
-              'detections_topic': '/perception/detections',
-              'engine_path': '/work/ros2_ws/yolov8n.engine',
-              'input_binding': 'images',
-              'output_binding': 'output0',
-              'conf_th': 0.35,
-              'iou_th': 0.50
+            package='shobo_detectors', executable='detector_node', name='trt_detector_rgb',
+            parameters=[detectors_cfg, {
+              'engine_path': engine_path,
+              'publish_annotated': publish_annotated
+            }]
+        ),
+        Node(
+            package='shobo_detectors', executable='detector_node', name='trt_detector_ir',
+            parameters=[detectors_cfg, {
+              'engine_path': engine_path,
+              'publish_annotated': publish_annotated,
+              'input_topic': '/sensors/ir/image_raw'
             }]
         )
     ])

@@ -6,7 +6,13 @@ setup(
     ('share/ament_index/resource_index/packages', [f'resource/{package_name}']),
     (f'share/{package_name}', ['package.xml']),
     (f'share/{package_name}/launch', ['launch/perception.launch.py']),
-    (f'share/{package_name}/config', ['config/rgb_cam.yaml','config/ir_cam.yaml']),
+    (f'share/{package_name}/config', [
+      'config/rgb_cam.yaml',
+      'config/ir_cam.yaml',
+      'config/detectors.yaml',
+      'config/camera_info/rgb_uvc.yaml',
+      'config/camera_info/ir_imx219.yaml',
+    ]),
   ],
   zip_safe=True,
 )
