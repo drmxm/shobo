@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.10)
 project(shobo_sensors)
 
+if(DEFINED CATKIN_INSTALL_INTO_PREFIX_ROOT)
+  set(_catkin_install_into_prefix_root ${CATKIN_INSTALL_INTO_PREFIX_ROOT})
+endif()
+if(DEFINED CATKIN_SYMLINK_INSTALL)
+  set(_catkin_symlink_install ${CATKIN_SYMLINK_INSTALL})
+endif()
+
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(image_transport REQUIRED)

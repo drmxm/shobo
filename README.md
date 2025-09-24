@@ -118,3 +118,28 @@ Each detector instance can be reconfigured via ROS parameters or launch-time ove
 
 ---
 For more context about the supporting services (Foxglove, telemetry) see `infra/README.md`.
++] Building 504.0s (19/20)                                                                             
+ => [internal] load local bake definitions                                                         0.0s
+ => => reading from stdin 585B                                                                     0.0s
+ => [internal] load build definition from Dockerfile                                               0.0s
+ => => transferring dockerfile: 7.39kB                                                             0.0s
+ => [internal] load metadata for nvcr.io/nvidia/l4t-jetpack:r36.4.0                                0.0s
+ => [internal] load .dockerignore                                                                  0.0s
+ => => transferring context: 2B                                                                    0.0s
+ => CACHED [ 1/15] FROM nvcr.io/nvidia/l4t-jetpack:r36.4.0                                         0.0s
+ => [internal] load build context                                                                  0.0s
+ => => transferring context: 7.23kB                                                                0.0s
+ => [ 2/15] RUN set -e  && apt-get update  && apt-get install -y --no-install-recommends         108.2s
+ => [ 3/15] RUN set -e  && apt-get update  && apt-get install -y --no-install-recommends ca-cert  16.3s
+ => [ 4/15] RUN set -e  && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros  259.1s
+ => [ 5/15] RUN set -e  && apt-get update && apt-get install -y --no-install-recommends libnvinf  13.6s 
+ => [ 6/15] RUN set -e && apt-get update && apt-get download nvidia-l4t-multimedia nvidia-l4t-mu  14.0s 
+ => [ 7/15] RUN set -e  && test -f /usr/local/cuda/include/cuda_runtime_api.h || { echo "FATAL: M  0.4s 
+ => [ 8/15] RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc                       0.4s 
+ => [ 9/15] WORKDIR /work/ros2_ws                                                                  0.0s 
+ => [10/15] COPY ros2_ws/src ./src                                                                 0.1s 
+ => [11/15] RUN set -e  && git clone --depth=1 -b humble https://github.com/ros-perception/vision  1.3s 
+ => [12/15] RUN set -e  && source /opt/ros/humble/setup.bash  && rosdep init || true  && rosdep   25.9s 
+ => [13/15] RUN find /usr/lib -maxdepth 2 -name 'libnv*' -print                                    0.5s 
+ => ERROR [14/15] RUN set -e  && source /opt/ros/humble/setup.bash  && rm -rf build install log   63.1s 
+failed to execute bake: read |0: file already closed                                                    

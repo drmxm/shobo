@@ -157,3 +157,5 @@ yolov8n.engine
 .logs/
 
 .json
+ros2_ws/src/shobo_detectors/back.txt
+backup
