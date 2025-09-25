@@ -11,10 +11,9 @@ find_package(cv_bridge REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(vision_msgs REQUIRED)
 find_package(CUDAToolkit REQUIRED)
-# DO NOT pull 'dnn' here (it can drag libcuda at link time on Jetson)
+# Custom NMS keeps us on the lighter OpenCV components
 find_package(OpenCV REQUIRED COMPONENTS core imgproc)
 
-# TensorRT optional; DLA is enabled at RUNTIME by TRT (dlopen), not by linker
 option(SHB_USE_TRT "Build with TensorRT acceleration" ON)
 option(SHB_USE_DLA "Enable DLA path via TRT runtime" ON)
 
@@ -31,6 +30,39 @@ else()
   message(WARNING "TensorRT not found — building without TRT")
 endif()
 
+if (USE_TRT)
+  # TensorRT pulls in driver/DLA libs; disable if they are unavailable during the build.
+  set(_nv_driver_lib_specs
+    nv:os
+    nv:dla_compiler
+    nv:dla_runtime
+    nv:rm_gpu
+    nv:rm_mem
+    nv:cud:la
+    c:uda)
+  set(_missing_nv_libs)
+  foreach(_spec IN LISTS _nv_driver_lib_specs)
+    string(REPLACE ":" "" _lib "${_spec}")
+    set(_found_var "_nv_lib_${_lib}")
+    find_library(${_found_var} ${_lib}
+      HINTS
+        /usr/lib/aarch64-linux-gnu
+        /usr/lib/aarch64-linux-gnu/tegra
+        /usr/lib/aarch64-linux-gnu/nvidia
+        /usr/local/cuda/lib64
+        /usr/local/cuda/targets/aarch64-linux/lib
+        /usr/local/cuda/compat)
+    if (NOT ${_found_var})
+      list(APPEND _missing_nv_libs ${_lib})
+    endif()
+  endforeach()
+  if (_missing_nv_libs)
+    list(JOIN _missing_nv_libs ", " _missing_nv_libs_str)
+    message(STATUS "TensorRT driver dependencies missing: ${_missing_nv_libs_str}. Building without TRT.")
+    set(USE_TRT OFF)
+  endif()
+endif()
+
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_executable(detector_node
@@ -41,7 +73,7 @@ add_executable(detector_node
 set_target_properties(detector_node PROPERTIES
   CUDA_SEPARABLE_COMPILATION ON
   CUDA_RESOLVE_DEVICE_SYMBOLS ON
-  CUDA_ARCHITECTURES "87"  # Orin (Ampere)
+  CUDA_ARCHITECTURES "87"  # Orin
 )
 
 ament_target_dependencies(detector_node
@@ -54,7 +86,7 @@ target_include_directories(detector_node PRIVATE
   ${OpenCV_INCLUDE_DIRS}
 )
 
-# Link ONLY cudart + OpenCV + (optionally) TensorRT. No driver libs.
+# Link ONLY cudart + OpenCV (+ TRT). No driver libs, no cuda stub.
 target_link_libraries(detector_node CUDA::cudart ${OpenCV_LIBRARIES})
 if (TARGET CUDA::cudadevrt)
   target_link_libraries(detector_node CUDA::cudadevrt)
@@ -66,20 +98,31 @@ if (USE_TRT)
   if (TENSORRT_PLUGIN_LIB)
     target_link_libraries(detector_node ${TENSORRT_PLUGIN_LIB})
   endif()
+  target_link_options(detector_node PRIVATE "-Wl,--no-as-needed")
+
+  set(_nv_link_dirs
+    /usr/lib/aarch64-linux-gnu
+    /usr/lib/aarch64-linux-gnu/nvidia
+    /usr/lib/aarch64-linux-gnu/tegra
+    /usr/local/cuda/compat)
+  foreach(link_dir IN LISTS _nv_link_dirs)
+    if (EXISTS ${link_dir})
+      target_link_directories(detector_node PRIVATE ${link_dir})
+      target_link_options(detector_node PRIVATE "-Wl,-rpath-link,${link_dir}")
+    endif()
+  endforeach()
   target_compile_definitions(detector_node PRIVATE SHB_USE_TRT=1)
   if (SHB_USE_DLA)
     target_compile_definitions(detector_node PRIVATE SHB_USE_DLA=1)
   endif()
 endif()
 
-# RPATHs so runtime-mounted Jetson libs are found at run time (NOT at link time)
+# RPATH only (so runtime-mounted libs are found when the container RUNS)
 set(NV_RPATHS
   "/lib/aarch64-linux-gnu"
   "/usr/lib/aarch64-linux-gnu"
   "/usr/lib/aarch64-linux-gnu/tegra"
   "/usr/lib/aarch64-linux-gnu/nvidia"
-  "/usr/local/cuda/compat"
-  "/usr/local/cuda/lib64"
 )
 list(REMOVE_DUPLICATES NV_RPATHS)
 string(JOIN ":" NV_RPATH_STR ${NV_RPATHS})

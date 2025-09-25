@@ -7,7 +7,7 @@ SHELL ["/bin/bash","-lc"]
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC LANG=C.UTF-8 \
     NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
 
-# --- OS + toolchain + GStreamer + OpenCV (system OpenCV) ---
+# --- OS + toolchain + GStreamer + OpenCV (system) ---
 RUN set -e \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -23,7 +23,7 @@ RUN set -e \
  && locale-gen en_US.UTF-8 && update-locale LANG=en_US.UTF-8 \
  && rm -rf /var/lib/apt/lists/*
 
-# --- NVIDIA Jetson apt repos (to fetch Jetson DEBs when needed) ---
+# --- Jetson repos (to fetch DEBs without installing meta packages) ---
 RUN set -e \
  && apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl \
@@ -50,7 +50,7 @@ RUN set -e \
       python3-rosdep python3-vcstool python3-colcon-common-extensions \
  && rm -rf /var/lib/apt/lists/*
 
-# --- TensorRT headers (SAFE) ---
+# --- TensorRT headers (SAFE to install) ---
 RUN set -e \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -58,37 +58,39 @@ RUN set -e \
  && echo "/usr/lib/aarch64-linux-gnu/tegra"  > /etc/ld.so.conf.d/tegra.conf \
  && echo "/usr/lib/aarch64-linux-gnu/nvidia" > /etc/ld.so.conf.d/nvidia-tegra.conf \
  && echo "/usr/local/cuda/lib64"             > /etc/ld.so.conf.d/cuda.conf \
- && echo "/usr/local/cuda/compat"            > /etc/ld.so.conf.d/cuda-compat.conf \
  && ldconfig
 
-# --- DLA compiler: download & extract ONLY (no preinst scripts!) ---
+# --- DLA compiler: copy ONLY the binary (no .so, no preinst scripts) ---
 RUN set -e \
  && apt-get update \
  && apt-get download nvidia-l4t-dla-compiler \
- && mkdir -p /tmp/nvdla_extract /usr/lib/aarch64-linux-gnu/nvidia /usr/local/bin \
+ && mkdir -p /tmp/nvdla_extract /usr/local/bin \
  && dpkg-deb -x nvidia-l4t-dla-compiler_*.deb /tmp/nvdla_extract \
- && cp -a /tmp/nvdla_extract/usr/lib/aarch64-linux-gnu/nvidia/. /usr/lib/aarch64-linux-gnu/nvidia/ || true \
- && cp -a /tmp/nvdla_extract/usr/bin/nvdla_compiler /usr/local/bin/ || true \
- && rm -rf /tmp/nvdla_extract nvidia-l4t-dla-compiler_*.deb \
- && ldconfig
+ && cp -a /tmp/nvdla_extract/usr/bin/nvdla_compiler /usr/local/bin/ 2>/dev/null || true \
+ && rm -rf /tmp/nvdla_extract nvidia-l4t-dla-compiler_*.deb
 
-# --- Env (fix OpenCV warning; keep ROS first) ---
+# --- Env (silence OpenCV warning; keep ROS first) ---
 ENV OpenCV_DIR=/usr/lib/aarch64-linux-gnu/cmake/opencv4 \
     CMAKE_PREFIX_PATH=/opt/ros/${ROS_DISTRO} \
-    PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
-    LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu/nvidia:/usr/lib/aarch64-linux-gnu/tegra:/usr/local/cuda/compat:/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
-
+    PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig
 RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /etc/bash.bashrc
 
 # --- Workspace (+ pin cv_bridge to JP OpenCV) ---
 WORKDIR /work/ros2_ws
 COPY ros2_ws/src ./src
+
+# Safety: fail build if CMake tries to link driver/DLA libs
+RUN set -e \
+ && if grep -R -nE 'nvos|nvdla|nvrm|cuda[[:space:]]*\)|-lcuda|-lnvcudla|-lnvos|-lnvdla' src; then \
+      echo 'FATAL: Your source/CMake still references driver/DLA libs. Remove them.' >&2; exit 1; \
+    fi
+
 RUN set -e \
  && git clone --depth=1 -b humble https://github.com/ros-perception/vision_opencv /tmp/vision_opencv \
  && mv /tmp/vision_opencv/cv_bridge ./src/cv_bridge \
  && rm -rf /tmp/vision_opencv
 
-# --- rosdep as non-root to avoid throttling ---
+# --- rosdep (do update as non-root to avoid throttling) ---
 RUN groupadd -f rosdep && useradd --create-home --shell /bin/bash -g rosdep rosbuild
 RUN set -e \
  && source /opt/ros/${ROS_DISTRO}/setup.bash \
@@ -97,7 +99,7 @@ RUN set -e \
  && su - rosbuild -c 'rosdep update' \
  && mkdir -p /root/.ros && cp -a /home/rosbuild/.ros/rosdep /root/.ros/
 
-# --- resolve deps + build ---
+# --- resolve deps + build (print full link line) ---
 RUN set -e \
  && apt-get update \
  && rosdep install --from-paths src --ignore-src -r -y \
@@ -109,7 +111,7 @@ RUN set -e \
  && source /opt/ros/${ROS_DISTRO}/setup.bash \
  && rm -rf build install log \
  && colcon build --symlink-install --merge-install \
-      --cmake-args -DCMAKE_BUILD_TYPE=Release
+      --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_VERBOSE_MAKEFILE=ON
 
 ENV ROS_LOG_DIR=/work/ros2_ws/logs
 RUN mkdir -p ${ROS_LOG_DIR}

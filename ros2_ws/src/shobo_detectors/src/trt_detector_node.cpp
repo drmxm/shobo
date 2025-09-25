@@ -56,6 +56,69 @@ Logger gLogger;
     }                                                                                               \
   } while (0)
 
+float intersection_over_union(const cv::Rect& a, const cv::Rect& b) {
+  const int x1 = std::max(a.x, b.x);
+  const int y1 = std::max(a.y, b.y);
+  const int x2 = std::min(a.x + a.width, b.x + b.width);
+  const int y2 = std::min(a.y + a.height, b.y + b.height);
+
+  const int interW = std::max(0, x2 - x1);
+  const int interH = std::max(0, y2 - y1);
+  const int interArea = interW * interH;
+  if (interArea <= 0) {
+    return 0.f;
+  }
+
+  const int unionArea = a.area() + b.area() - interArea;
+  if (unionArea <= 0) {
+    return 0.f;
+  }
+
+  return static_cast<float>(interArea) / static_cast<float>(unionArea);
+}
+
+void nms_indices(const std::vector<cv::Rect>& boxes,
+                 const std::vector<float>& scores,
+                 float iou_threshold,
+                 std::vector<int>& keep) {
+  const size_t count = boxes.size();
+  if (count == 0) {
+    keep.clear();
+    return;
+  }
+
+  std::vector<int> order(count);
+  std::iota(order.begin(), order.end(), 0);
+  std::sort(order.begin(), order.end(), [&](int lhs, int rhs) {
+    return scores[static_cast<size_t>(lhs)] > scores[static_cast<size_t>(rhs)];
+  });
+
+  std::vector<char> suppressed(count, 0);
+  keep.clear();
+  keep.reserve(count);
+
+  for (size_t i = 0; i < count; ++i) {
+    const int idx = order[i];
+    if (suppressed[static_cast<size_t>(idx)]) {
+      continue;
+    }
+    keep.push_back(idx);
+
+    for (size_t j = i + 1; j < count; ++j) {
+      const int nextIdx = order[j];
+      if (suppressed[static_cast<size_t>(nextIdx)]) {
+        continue;
+      }
+
+      const float iou = intersection_over_union(boxes[static_cast<size_t>(idx)],
+                                                 boxes[static_cast<size_t>(nextIdx)]);
+      if (iou >= iou_threshold) {
+        suppressed[static_cast<size_t>(nextIdx)] = 1;
+      }
+    }
+  }
+}
+
 }  // namespace
 
 class TrtDetectorNode : public rclcpp::Node {
@@ -344,7 +407,7 @@ private:
     }
 
     std::vector<int> keep;
-    cv::dnn::NMSBoxes(boxes, scores, static_cast<float>(conf_th_), static_cast<float>(iou_th_), keep);
+    nms_indices(boxes, scores, static_cast<float>(iou_th_), keep);
 
     if (max_detections_ > 0 && static_cast<int>(keep.size()) > max_detections_) {
       keep.resize(static_cast<size_t>(max_detections_));
