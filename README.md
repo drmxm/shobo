@@ -45,8 +45,18 @@ docker run --rm -it --net=host --runtime nvidia --privileged \
   -v /dev:/dev \
   shobo-perception
 ```
+
+docker run -it --net=host --runtime nvidia --privileged \
+  -e NVIDIA_VISIBLE_DEVICES=all -e NVIDIA_DRIVER_CAPABILITIES=all \
+  -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v /tmp/argus_socket:/tmp/argus_socket \
+  -v /dev:/dev \
+  shobo-perception
 docker run --rm --entrypoint /usr/local/bin/ensure_trt_engine.sh shobo-perception --check
 
+what I vedone
+docker compose rm -f -s -v perception
+CUDA_MODULE_LOADING=LAZY docker compose up perception
 ### Useful Environment Variables
 - `RGB_DEV` – Override the UVC device (auto-detects `/dev/video0`/`/dev/video1`).
 - `IR_SENSOR_ID` – Pick CSI sensor index (default `0`).
@@ -66,11 +76,12 @@ Detections are `vision_msgs/Detection2DArray` with COCO labels loaded from `conf
 The container now self-manages the TensorRT plan: on start it checks
 `/work/ros2_ws/models/yolov8n.engine`, and if missing or stale compared to the
 ONNX file it runs `trtexec` with the Jetson GPU to regenerate it. This guarantees
-version compatibility with the deployed JetPack. The bundled ONNX already
-encodes the static `1x3x640x640` input shape, so the builder relies on that
-shape instead of forcing an optimization profile. If you export a dynamic
-variant for multi-shape support, pass your own `--minShapes/--optShapes/--maxShapes`
-flags when rebuilding the engine.
+version compatibility with the deployed JetPack. The engine is no longer bind-mounted
+from the host in `docker-compose.yml`, so TensorRT is always free to emit a fresh
+plan that matches the device you launch on. The bundled ONNX already encodes the
+static `1x3x640x640` input shape, so the builder relies on that shape instead of
+forcing an optimization profile. If you export a dynamic variant for multi-shape
+support, pass your own `--minShapes/--optShapes/--maxShapes` flags when rebuilding the engine.
 
 If you prefer to bake a custom model ahead of time, you can still export ONNX or
 engines using the tooling under `tools/` and drop the files into `ros2_ws/` before

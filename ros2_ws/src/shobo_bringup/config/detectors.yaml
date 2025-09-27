@@ -1,5 +1,6 @@
 trt_detector_rgb:
   ros__parameters:
+    # COCO80 labels
     class_labels:
       - person
       - bicycle
@@ -81,16 +82,22 @@ trt_detector_rgb:
       - teddy bear
       - hair drier
       - toothbrush
-    input_topic: "/sensors/rgb/image_raw"          # change to "/rgb_cam/image_raw" if that's your actual topic
+
+    # IMPORTANT: match your actual camera topics
+    input_topic: "sensors/rgb/image_raw"
     annotated_topic: "/perception/rgb/annotated"
     detections_topic: "/perception/rgb/detections"
+
     engine_path: "/work/ros2_ws/yolov8n.engine"
     input_binding: "images"
     output_binding: "output0"
+
     conf_th: 0.35
     iou_th: 0.50
     max_detections: 300
-    use_cuda_preproc: true
+
+    # Make it work first: disable the buggy custom CUDA preproc
+    use_cuda_preproc: false
 
 trt_detector_ir:
   ros__parameters:
@@ -175,13 +182,17 @@ trt_detector_ir:
       - teddy bear
       - hair drier
       - toothbrush
-    input_topic: "/sensors/ir/image_raw"           # change to "/ir_cam/image_raw" if that's your actual topic
+
+    input_topic: "/sensors/ir/image_raw"
     annotated_topic: "/perception/ir/annotated"
     detections_topic: "/perception/ir/detections"
+
     engine_path: "/work/ros2_ws/yolov8n.engine"
     input_binding: "images"
     output_binding: "output0"
+
     conf_th: 0.35
     iou_th: 0.50
     max_detections: 300
-    use_cuda_preproc: true
+
+    use_cuda_preproc: false

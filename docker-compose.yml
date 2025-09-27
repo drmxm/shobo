@@ -27,8 +27,7 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - /tmp/argus_socket:/tmp/argus_socket
-      # Mount model/config only (do NOT mount whole ros2_ws here)
-      - ./ros2_ws/yolov8n.engine:/work/ros2_ws/yolov8n.engine:ro
+      # Mount config only; TensorRT engine is regenerated inside the container
       - ./ros2_ws/yolov8n.json:/work/ros2_ws/yolov8n.json:ro
     group_add:
       - "44" # video
