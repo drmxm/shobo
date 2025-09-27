@@ -120,9 +120,6 @@ ros2 topic hz /sensors/ir/image_raw
 ros2 topic hz /perception/rgb/detections
 ros2 topic hz /perception/ir/detections
 
-# Peek first few detections
-ros2 topic echo /perception/rgb/detections -n 5 --qos-reliability best_effort
-ros2 topic echo /perception/ir/detections  -n 5 --qos-reliability best_effort
 
 
 ## Improvement Plan

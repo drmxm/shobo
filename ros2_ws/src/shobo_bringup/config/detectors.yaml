@@ -84,7 +84,7 @@ trt_detector_rgb:
       - toothbrush
 
     # IMPORTANT: match your actual camera topics
-    input_topic: "sensors/rgb/image_raw"
+    input_topic: "/sensors/rgb/image_raw"
     annotated_topic: "/perception/rgb/annotated"
     detections_topic: "/perception/rgb/detections"
 
