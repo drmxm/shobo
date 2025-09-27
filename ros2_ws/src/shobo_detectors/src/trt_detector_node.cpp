@@ -41,9 +41,14 @@ namespace {
 
 class Logger : public nvinfer1::ILogger {
 public:
-  void log(Severity severity, const char* message) noexcept override {
-    if (severity <= Severity::kWARNING) {
-      RCLCPP_INFO(rclcpp::get_logger("trt_detector"), "[TRT] %s", message);
+  void log(Severity s, const char* msg) noexcept override {
+    auto lg = rclcpp::get_logger("trt_detector");
+    switch (s) {
+      case Severity::kINTERNAL_ERROR:
+      case Severity::kERROR:   RCLCPP_ERROR(lg, "[TRT] %s", msg); break;
+      case Severity::kWARNING: RCLCPP_WARN (lg, "[TRT] %s", msg); break;
+      case Severity::kINFO:    RCLCPP_INFO (lg, "[TRT] %s", msg); break;
+      default:                 RCLCPP_DEBUG(lg, "[TRT] %s", msg); break;
     }
   }
 };

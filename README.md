@@ -57,6 +57,7 @@ docker run --rm --entrypoint /usr/local/bin/ensure_trt_engine.sh shobo-perceptio
 what I vedone
 docker compose rm -f -s -v perception
 CUDA_MODULE_LOADING=LAZY docker compose up perception
+docker compose exec perception bash
 ### Useful Environment Variables
 - `RGB_DEV` – Override the UVC device (auto-detects `/dev/video0`/`/dev/video1`).
 - `IR_SENSOR_ID` – Pick CSI sensor index (default `0`).
@@ -106,6 +107,23 @@ Each detector instance can be reconfigured via ROS parameters or launch-time ove
 - CUDA preprocessing now performs bilinear letterboxing directly on the GPU. Set `use_cuda_preproc:=false` via parameters if you need a CPU fallback for debugging.
 - Launch file spins two detector nodes: `trt_detector_rgb` and `trt_detector_ir`.
 - `shobo_detectors` automatically falls back to a stub if TensorRT headers/libs are missing at build time.
+
+
+# List topics quickly
+ros2 topic list
+
+# Camera FPS
+ros2 topic hz /sensors/rgb/image_raw
+ros2 topic hz /sensors/ir/image_raw
+
+# Detector output FPS
+ros2 topic hz /perception/rgb/detections
+ros2 topic hz /perception/ir/detections
+
+# Peek first few detections
+ros2 topic echo /perception/rgb/detections -n 5 --qos-reliability best_effort
+ros2 topic echo /perception/ir/detections  -n 5 --qos-reliability best_effort
+
 
 ## Improvement Plan
 1. Add automated regression tests (bag replay) covering RGB + IR detection throughput and accuracy.
