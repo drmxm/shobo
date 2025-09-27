@@ -20,7 +20,7 @@
 
 #include "shobo_detectors/kernels.hpp"
 
-#ifdef SHB_USE_TRT
+#if SHB_USE_TRT
 
 #include <NvInfer.h>
 #include <cuda_runtime.h>
@@ -132,7 +132,7 @@ public:
     annotated_topic_ = this->declare_parameter<std::string>("annotated_topic", "/perception/annotated");
     detections_topic_ = this->declare_parameter<std::string>("detections_topic", "/perception/detections");
     publish_annotated_ = this->declare_parameter<bool>("publish_annotated", true);
-    engine_path_ = this->declare_parameter<std::string>("engine_path", "/work/ros2_ws/yolov8n.engine");
+    engine_path_ = this->declare_parameter<std::string>("engine_path", "/work/ros2_ws/models/yolov8n.engine");
     input_binding_ = this->declare_parameter<std::string>("input_binding", "images");
     output_binding_ = this->declare_parameter<std::string>("output_binding", "output0");
     conf_th_ = this->declare_parameter<double>("conf_th", 0.35);

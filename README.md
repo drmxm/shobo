@@ -23,33 +23,35 @@ End-to-end perception stack for Jetson-based robots. It streams RGB (UVC) and IR
    ```
 4. Stop and rebuild the detection container when the engine changes:
    ```bash
-   docker compose stop perception || true
+   docker compose stop shobo-perception || true
    docker compose rm -f -s -v perception
    docker compose build --no-cache perception
    docker builder prune -af
    xhost +local:root
    docker compose up --no-build perception
-   docker build --no-cache --progress=plain   --build-arg L4T_TAG=r36.4.0   -t shobo-perception .
-   docker run --rm -it --net=host --runtime nvidia --privileged \
-  -e NVIDIA_VISIBLE_DEVICES=all -e NVIDIA_DRIVER_CAPABILITIES=all \
-  -v /dev:/dev shobo-perception
-  
    ```
 
-   ```bash
-   xhost +local:root  # if you use RViz or anything X11
+To run the detector container by hand (outside compose) the TensorRT engine is
+auto-generated on first launch from the bundled ONNX (`/work/ros2_ws/yolov8n.onnx`),
+so no volume mount is required. The initial run will spend ~1–2 minutes building
+the engine and cache:
+
+```bash
+xhost +local:root  # once per shell if you need X11/GL
 docker run --rm -it --net=host --runtime nvidia --privileged \
   -e NVIDIA_VISIBLE_DEVICES=all -e NVIDIA_DRIVER_CAPABILITIES=all \
   -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix \
   -v /tmp/argus_socket:/tmp/argus_socket \
   -v /dev:/dev \
   shobo-perception
-   ```
+```
+docker run --rm --entrypoint /usr/local/bin/ensure_trt_engine.sh shobo-perception --check
 
 ### Useful Environment Variables
-- `RGB_DEV` – Override the UVC device (default `/dev/video1`).
+- `RGB_DEV` – Override the UVC device (auto-detects `/dev/video0`/`/dev/video1`).
 - `IR_SENSOR_ID` – Pick CSI sensor index (default `0`).
-- `YOLO_ENGINE` – Path to the TensorRT engine inside the container (default `/work/ros2_ws/yolov8n.engine`).
+- `YOLO_ENGINE` – Path to the TensorRT engine inside the container (default `/work/ros2_ws/models/yolov8n.engine`).
+- `YOLO_ONNX` – Override the ONNX path used when regenerating the engine (default `/work/ros2_ws/yolov8n.onnx`).
 - `PUBLISH_ANNOTATED` – Set to `0/false` to disable annotated image publication.
 
 ## Runtime Topics
@@ -61,44 +63,19 @@ docker run --rm -it --net=host --runtime nvidia --privileged \
 Detections are `vision_msgs/Detection2DArray` with COCO labels loaded from `config/detectors.yaml`.
 
 ## Building the TensorRT Engine
-The repo carries a reference `yolov8n.engine`, but you can regenerate it for other models or image sizes.
+The container now self-manages the TensorRT plan: on start it checks
+`/work/ros2_ws/models/yolov8n.engine`, and if missing or stale compared to the
+ONNX file it runs `trtexec` with the Jetson GPU to regenerate it. This guarantees
+version compatibility with the deployed JetPack. The bundled ONNX already
+encodes the static `1x3x640x640` input shape, so the builder relies on that
+shape instead of forcing an optimization profile. If you export a dynamic
+variant for multi-shape support, pass your own `--minShapes/--optShapes/--maxShapes`
+flags when rebuilding the engine.
 
-### 1. Export YOLOv8 to TensorRT (recommended)
-Use the helper script which builds the engine container and runs Ultralytics export inside it:
-```bash
-./tools/build_engine.sh yolov8n.pt 640
-```
-- Uses `docker compose` profile `engine` (`tools/Dockerfile.engine`).
-- Outputs the engine and metadata into `ros2_ws/` (e.g., `ros2_ws/yolov8n.engine`, `ros2_ws/yolov8n.json`).
-- Tweak arguments (e.g., `yolov8s.pt`, custom image size) as needed.
-
-### 2. Manual Ultralytics export inside the container
-```bash
-docker compose run --rm engine \
-  python3 tools/export_engine.py yolov8n.pt 640 \
-  --outdir ros2_ws --workspace 6 --half
-```
-- `--half` enables FP16 (default `True`).
-- `--workspace` sets TensorRT workspace size (GB).
-- The script writes `ros2_ws/trt_export/weights/*.engine` then copies to `ros2_ws/<model>.engine`.
-
-### 3. Produce an intermediate ONNX (optional)
-If you need to inspect or edit the ONNX before TensorRT conversion:
-```bash
-docker compose run --rm engine \
-  yolo export model=yolov8n.pt format=onnx imgsz=640 simplify=True
-```
-The ONNX will be stored under `/work/runs/export/onnx/` inside the container; copy or mount as required. You can then feed it into TensorRT using `trtexec` or custom tooling.
-
-### 4. Validating the Engine
-1. Copy the new `.engine` + `.json` into `ros2_ws/` (mounted read-only into the perception container).
-2. Restart the `perception` service.
-3. Monitor topics:
-   ```bash
-   ros2 topic echo /perception/rgb/detections
-   ros2 topic echo /perception/ir/detections
-   ```
-4. Optionally view overlays in Foxglove (`ws://<jetson-ip>:8765`).
+If you prefer to bake a custom model ahead of time, you can still export ONNX or
+engines using the tooling under `tools/` and drop the files into `ros2_ws/` before
+building the image. Set `YOLO_ONNX`/`YOLO_ENGINE` at runtime to point at the
+appropriate files.
 
 ## Detector Node Configuration
 `config/detectors.yaml` ships defaults for both detectors:
@@ -127,7 +104,7 @@ Each detector instance can be reconfigured via ROS parameters or launch-time ove
 5. Document Foxglove/infra stack with sample dashboards and alerting hooks.
 
 ## Troubleshooting
-- **No detections:** Confirm `/work/ros2_ws/yolov8n.engine` exists inside the container and matches binding names (`images`, `output0`).
+- **No detections:** Confirm `/work/ros2_ws/models/yolov8n.engine` exists inside the container and matches binding names (`images`, `output0`).
 - **Camera timeouts:** Check device permissions (`/dev/video*` mapped) and that `RGB_DEV` / `IR_SENSOR_ID` are correct.
 - **TensorRT errors at launch:** Rebuild inside matching JetPack/L4T versions. Engines are not portable across JetPack releases.
 - **High latency:** Disable annotated publishing (`PUBLISH_ANNOTATED=0`) or lower image size (regenerate engine with `imgsz=512`).

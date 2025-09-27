@@ -1,8 +1,8 @@
 rgb_cam:
   ros__parameters:
     'rgb.device': "/dev/video1"
-    'rgb.width': 1280
-    'rgb.height': 720
+    'rgb.width': 640
+    'rgb.height': 640
     'rgb.fps': 30
     'rgb.frame_id': "rgb_frame"
     'rgb.camera_name': "rgb_uvc"

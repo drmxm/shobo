@@ -159,3 +159,4 @@ yolov8n.engine
 .json
 ros2_ws/src/shobo_detectors/back.txt
 backup
+*.deb

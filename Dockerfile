@@ -69,6 +69,21 @@ RUN set -e \
  && cp -a /tmp/nvdla_extract/usr/bin/nvdla_compiler /usr/local/bin/ 2>/dev/null || true \
  && rm -rf /tmp/nvdla_extract nvidia-l4t-dla-compiler_*.deb
 
+# --- Runtime driver stubs required by TensorRT ---
+RUN set -e \
+ && apt-get update \
+ && apt-get download nvidia-l4t-core nvidia-l4t-cuda \
+ && mkdir -p /tmp/nv_extract \
+ && for pkg in nvidia-l4t-core_*.deb nvidia-l4t-cuda_*.deb; do \
+      dpkg-deb -x "${pkg}" /tmp/nv_extract; \
+    done \
+ && mkdir -p /usr/lib/aarch64-linux-gnu/nvidia \
+ && cp -a /tmp/nv_extract/usr/lib/aarch64-linux-gnu/nvidia/. /usr/lib/aarch64-linux-gnu/nvidia/ \
+ && cp -a /tmp/nv_extract/usr/lib/aarch64-linux-gnu/libcuda.so* /usr/lib/aarch64-linux-gnu/ 2>/dev/null || true \
+ && cp -a /tmp/nv_extract/usr/lib/aarch64-linux-gnu/libnvcudla.so* /usr/lib/aarch64-linux-gnu/ 2>/dev/null || true \
+ && rm -rf /tmp/nv_extract nvidia-l4t-core_*.deb nvidia-l4t-cuda_*.deb \
+ && ldconfig
+
 # --- Env (silence OpenCV warning; keep ROS first) ---
 ENV OpenCV_DIR=/usr/lib/aarch64-linux-gnu/cmake/opencv4 \
     CMAKE_PREFIX_PATH=/opt/ros/${ROS_DISTRO} \
@@ -78,6 +93,12 @@ RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /etc/bash.bashrc
 # --- Workspace (+ pin cv_bridge to JP OpenCV) ---
 WORKDIR /work/ros2_ws
 COPY ros2_ws/src ./src
+COPY yolov8n.onnx ./yolov8n.onnx
+COPY ros2_ws/yolov8n.json ./yolov8n.json
+COPY tools/ensure_trt_engine.sh /usr/local/bin/ensure_trt_engine.sh
+RUN chmod +x /usr/local/bin/ensure_trt_engine.sh
+
+RUN mkdir -p models
 
 # Safety: fail build if CMake tries to link driver/DLA libs
 RUN set -e \
@@ -116,4 +137,5 @@ RUN set -e \
 ENV ROS_LOG_DIR=/work/ros2_ws/logs
 RUN mkdir -p ${ROS_LOG_DIR}
 
-CMD bash -lc "source /opt/ros/${ROS_DISTRO}/setup.bash && source install/setup.bash && ros2 launch shobo_bringup perception.launch.py"
+ENTRYPOINT ["/usr/local/bin/ensure_trt_engine.sh"]
+CMD ["bash", "-lc", "source /opt/ros/${ROS_DISTRO}/setup.bash && source install/setup.bash && ros2 launch shobo_bringup perception.launch.py"]
