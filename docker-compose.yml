@@ -31,6 +31,7 @@ services:
       - ./ros2_ws/yolov8n.json:/work/ros2_ws/yolov8n.json:ro
     group_add:
       - "44" # video
+    profiles: ["perception"] 
 
   engine:
     build:
@@ -55,14 +56,11 @@ services:
   infra:
     container_name: shobo-infra
     build:
-      context: .
+      context: ./infra
     image: shobo-infra:latest
     network_mode: host
     ipc: host
     restart: unless-stopped
-    depends_on:
-      sensors_uvc_rgb:
-        condition: service_started   # start even if sensor health is picky
     environment:
       ROS_DOMAIN_ID: "0"
       FOXGLOVE_PORT: "${FOXGLOVE_PORT:-8765}"

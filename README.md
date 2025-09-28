@@ -58,6 +58,15 @@ what I vedone
 docker compose rm -f -s -v perception
 CUDA_MODULE_LOADING=LAZY docker compose up perception
 docker compose exec perception bash
+
+docker compose build infra
+docker compose up -d --force-recreate infra
+docker compose logs -f infra
+docker compose --profile infra build
+
+
+docker compose --profile infra up -d
+
 ### Useful Environment Variables
 - `RGB_DEV` – Override the UVC device (auto-detects `/dev/video0`/`/dev/video1`).
 - `IR_SENSOR_ID` – Pick CSI sensor index (default `0`).
