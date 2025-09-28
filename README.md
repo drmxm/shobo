@@ -57,7 +57,7 @@ docker run --rm --entrypoint /usr/local/bin/ensure_trt_engine.sh shobo-perceptio
 what I vedone
 docker compose rm -f -s -v perception
 CUDA_MODULE_LOADING=LAZY docker compose up perception
-docker compose exec perception bash
+ros2 topic info /sensors/rgb/image_raw
 
 docker compose build infra
 docker compose up -d --force-recreate infra
@@ -66,7 +66,18 @@ docker compose --profile infra build
 
 
 docker compose --profile infra up -d
+CUDA_MODULE_LOADING=LAZY docker compose --profile percepion up -d
 
+docker compose stop shobo-perception
+docker compose rm -f -s -v shobo-perception
+docker compose up -d --force-recreate --no-deps shobo-perception
+docker compose up -d --no-deps shobo-perception
+
+if ir is not working
+docker exec -it shobo-perception bash
+ xhost +local:root
+ docker compose restart perception
+ ros2 topic echo /perception/rgb/detections
 ### Useful Environment Variables
 - `RGB_DEV` – Override the UVC device (auto-detects `/dev/video0`/`/dev/video1`).
 - `IR_SENSOR_ID` – Pick CSI sensor index (default `0`).
@@ -117,7 +128,7 @@ Each detector instance can be reconfigured via ROS parameters or launch-time ove
 - Launch file spins two detector nodes: `trt_detector_rgb` and `trt_detector_ir`.
 - `shobo_detectors` automatically falls back to a stub if TensorRT headers/libs are missing at build time.
 
-
+docker exec -it shobo-perception bash
 # List topics quickly
 ros2 topic list
 
@@ -130,7 +141,9 @@ ros2 topic hz /perception/rgb/detections
 ros2 topic hz /perception/ir/detections
 
 
-
+ros2 topic list
+  ros2 topic type /perception/ir/detections
+  ros2 interface show $(ros2 topic type /perception/ir/detections)
 ## Improvement Plan
 1. Add automated regression tests (bag replay) covering RGB + IR detection throughput and accuracy.
 2. Implement runtime health reporting (camera frame age, detector inference time) and expose on diagnostics topics.

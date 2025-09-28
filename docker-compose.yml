@@ -4,6 +4,7 @@ services:
       context: .
       args:
         L4T_TAG: r36.4.0
+    image: shobo-perception:latest
     container_name: shobo-perception
     restart: unless-stopped
     network_mode: host
@@ -16,7 +17,8 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=all
       - DISPLAY=${DISPLAY}
       - QT_X11_NO_MITSHM=1
-      - RGB_DEV=/dev/video1
+      # Allow auto-detection inside perception.launch.py unless overridden
+      - RGB_DEV=
       - IR_SENSOR_ID=0
       - ROS_DISTRO=humble
       # Make sure runtime can find Jetson & CUDA libs:
@@ -24,6 +26,7 @@ services:
     devices:
       - /dev/video0:/dev/video0
       - /dev/video1:/dev/video1
+      - /dev:/dev  
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - /tmp/argus_socket:/tmp/argus_socket
@@ -33,24 +36,25 @@ services:
       - "44" # video
     profiles: ["perception"] 
 
-  engine:
-    build:
-      context: .
-      dockerfile: tools/Dockerfile.engine
-    container_name: shobo-engine
-    runtime: nvidia
-    gpus: all
-    network_mode: host
-    environment:
-      - YOLO_CONFIG_DIR=/work/.ultralytics
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=all
-    volumes:
-      - .:/work
-      - ./ros2_ws:/work/ros2_ws
-      - ./tools:/work/tools:ro
-    working_dir: /work
-    profiles: ["engine-builder"]
+  # engine:
+  #   build:
+  #     context: .
+  #     dockerfile: tools/Dockerfile.engine
+  #   image: shobo-engine:latest
+  #   container_name: shobo-engine
+  #   runtime: nvidia
+  #   gpus: all
+  #   network_mode: host
+  #   environment:
+  #     - YOLO_CONFIG_DIR=/work/.ultralytics
+  #     - NVIDIA_VISIBLE_DEVICES=all
+  #     - NVIDIA_DRIVER_CAPABILITIES=all
+  #   volumes:
+  #     - .:/work
+  #     - ./ros2_ws:/work/ros2_ws
+  #     - ./tools:/work/tools:ro
+  #   working_dir: /work
+  #   profiles: ["engine-builder"]
   
 # ====================== INFRA (Foxglove bridge / WS) ======================
   infra:
