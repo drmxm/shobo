@@ -1,8 +1,8 @@
 ir_cam:
   ros__parameters:
     'ir.sensor_id': 0
-    'ir.width': 1280
-    'ir.height': 720
+    'ir.width': 640
+    'ir.height': 640
     'ir.fps': 30
     'ir.frame_id': "ir_frame"
     'ir.camera_name': "ir_imx219"

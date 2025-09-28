@@ -4,11 +4,35 @@ foxglove_bridge:
     # address and port overridden by CLI params from start.sh
     use_compression: false         # Foxglove binary frame compression off (set true if needed)
     # Topic defaults; bridge discovers ROS graph dynamically.
-    # QoS overrides can go here if you see mismatches with publishers.
-    # Example (uncomment & edit exact topics):
-    # qos_overrides:
-    #   "/sensors/uvc/image_raw":
-    #     reliability: best_effort
-    #     durability: volatile
-    #     history: keep_last
-    #     depth: 2
+    # Match perception publishers (sensor data QoS is best_effort/volatile).
+    qos_overrides:
+      "/sensors/rgb/image_raw":
+        reliability: best_effort
+        durability: volatile
+        history: keep_last
+        depth: 5
+      "/sensors/ir/image_raw":
+        reliability: best_effort
+        durability: volatile
+        history: keep_last
+        depth: 5
+      "/perception/rgb/annotated":
+        reliability: best_effort
+        durability: volatile
+        history: keep_last
+        depth: 5
+      "/perception/ir/annotated":
+        reliability: best_effort
+        durability: volatile
+        history: keep_last
+        depth: 5
+      "/perception/rgb/detections":
+        reliability: best_effort
+        durability: volatile
+        history: keep_last
+        depth: 5
+      "/perception/ir/detections":
+        reliability: best_effort
+        durability: volatile
+        history: keep_last
+        depth: 5
