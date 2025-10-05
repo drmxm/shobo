@@ -27,6 +27,7 @@
 #include <cuda_fp16.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -425,15 +426,19 @@ private:
     std::vector<int>      cls;   cls.reserve(nBoxes);
     std::vector<float>    scr;   scr.reserve(nBoxes);
 
+    float frame_max_conf = 0.f;
+    float frame_max_score = 0.f;
+    int   frame_max_cls  = -1;
+    float frame_raw_x = 0.f, frame_raw_y = 0.f, frame_raw_w = 0.f, frame_raw_h = 0.f;
+    float frame_rect_w = 0.f, frame_rect_h = 0.f;
+
     for (int b = 0; b < nBoxes; ++b) {
-      const float obj = at(4, b);
-      int bestC = -1; float bestP = 0.f;
-      for (int c = 5; c < nAttr; ++c) {
-        const float p = at(c, b);
-        if (p > bestP) { bestP = p; bestC = c - 5; }
+      int bestC = -1; float bestScore = 0.f;
+      for (int c = 4; c < nAttr; ++c) {
+        const float score = at(c, b);
+        if (score > bestScore) { bestScore = score; bestC = c - 4; }
       }
-      const float conf = obj * bestP;
-      if (conf < static_cast<float>(conf_th_)) continue;
+      if (bestC < 0) continue;
 
       const float cx = at(0, b), cy = at(1, b);
       const float w  = at(2, b), h  = at(3, b);
@@ -441,6 +446,22 @@ private:
       const float left = (cx - 0.5f * w - padX) / scale;
       const float top  = (cy - 0.5f * h - padY) / scale;
       const float ww   =  w / scale, hh = h / scale;
+
+      float conf = bestScore;
+      if (conf > 1.f || conf < 0.f) conf = 1.f / (1.f + std::exp(-conf));
+
+      if (conf > frame_max_conf) {
+        frame_max_conf = conf;
+        frame_max_score = bestScore;
+        frame_max_cls  = bestC;
+        frame_raw_x = cx;
+        frame_raw_y = cy;
+        frame_raw_w = w;
+        frame_raw_h = h;
+        frame_rect_w = ww;
+        frame_rect_h = hh;
+      }
+      if (conf < static_cast<float>(conf_th_)) continue;
 
       int x = std::max(0, static_cast<int>(std::round(left)));
       int y = std::max(0, static_cast<int>(std::round(top)));
@@ -487,6 +508,15 @@ private:
     }
 
     pub_detections_->publish(out);
+    if (out.detections.empty()) {
+      RCLCPP_DEBUG_THROTTLE(get_logger(), *this->get_clock(), 2000,
+                            "No detections; max conf %.3f score %.3f class %s raw=(%.1f,%.1f,%.1f,%.1f) rect=(%.1f,%.1f) scale=%.3f pad=(%d,%d)",
+                            frame_max_conf, frame_max_score,
+                            frame_max_cls >= 0 ? class_name(frame_max_cls).c_str() : "n/a",
+                            frame_raw_x, frame_raw_y, frame_raw_w, frame_raw_h,
+                            frame_rect_w, frame_rect_h,
+                            scale, padX, padY);
+    }
     if (publish_annotated_) {
       auto msg_img = cv_bridge::CvImage(msg->header, "bgr8", annotated).toImageMsg();
       pub_annotated_.publish(msg_img);

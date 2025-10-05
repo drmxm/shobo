@@ -37,7 +37,7 @@ so no volume mount is required. The initial run will spend ~1–2 minutes buildi
 the engine and cache:
 
 ```bash
-xhost +local:root  # once per shell if you need X11/GL
+xhost +local:root  # once per shell if you need X11/GL if you don't see the ir stream in foxglove
 docker run --rm -it --net=host --runtime nvidia --privileged \
   -e NVIDIA_VISIBLE_DEVICES=all -e NVIDIA_DRIVER_CAPABILITIES=all \
   -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix \
@@ -73,11 +73,14 @@ docker compose rm -f -s -v shobo-perception
 docker compose up -d --force-recreate --no-deps shobo-perception
 docker compose up -d --no-deps shobo-perception
 
+# Finally working - Do not foget to xhost +local:root
 if ir is not working
 docker exec -it shobo-perception bash
  xhost +local:root
  docker compose restart perception
  ros2 topic echo /perception/rgb/detections
+
+ ros2 param set trt_detector_rgb conf_th 0.2 
 ### Useful Environment Variables
 - `RGB_DEV` – Override the UVC device (auto-detects `/dev/video0`/`/dev/video1`).
 - `IR_SENSOR_ID` – Pick CSI sensor index (default `0`).
